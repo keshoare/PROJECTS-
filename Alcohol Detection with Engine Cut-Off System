@@ -1,0 +1,129 @@
+// arduino code
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// ===== Pin Definitions =====
+const int alcoholSensorPin = A0;  // MQ-3 Alcohol Sensor (Analog output)
+const int motorEnable = 9;        // L293N Enable Pin (PWM for speed control)
+const int motorIn1 = 6;           // L293N Input 1
+const int motorIn2 = 7;           // L293N Input 2
+const int buzzerPin = 8;          // Buzzer
+const int buttonPin = 2;          // Toggle button
+
+// ===== LCD Address =====
+// Change to 0x3F if your LCD I2C address is different
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+int buttonState = 0;
+int lastButtonState = 0;
+bool systemActive = false;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Setup motor control pins
+  pinMode(motorEnable, OUTPUT);
+  pinMode(motorIn1, OUTPUT);
+  pinMode(motorIn2, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(buttonPin, INPUT_PULLUP);  // Internal pull-up resistor for the button
+
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Alcohol System");
+  lcd.setCursor(0, 1);
+  lcd.print("Press Button");
+
+  Serial.println("Alcohol Sensor System Initialized.");
+}
+
+void loop() {
+  buttonState = digitalRead(buttonPin);
+
+  // Toggle system ON/OFF with button press
+  if (buttonState == LOW && lastButtonState == HIGH) {
+    systemActive = !systemActive;
+    delay(300);  // Debounce delay
+  }
+  lastButtonState = buttonState;
+
+  if (systemActive) {
+    int sensorValue = analogRead(alcoholSensorPin);
+    float alcoholLevel = map(sensorValue, 0, 1023, 0, 100);  // Convert to percentage
+
+    // Print alcohol level to Serial Monitor
+    Serial.print("Alcohol Level: ");
+    Serial.print(alcoholLevel);
+    Serial.println("%");
+
+    // Display on LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Alcohol: ");
+    lcd.print(alcoholLevel);
+    lcd.print("%");
+
+    if (alcoholLevel >= 75) {
+      // Stop motor (Engine OFF)
+      digitalWrite(motorIn1, LOW);
+      digitalWrite(motorIn2, LOW);
+      analogWrite(motorEnable, 0);
+
+      digitalWrite(buzzerPin, HIGH); // Turn on buzzer
+      Serial.println("Engine OFF");
+
+      lcd.setCursor(0, 1);
+      lcd.print("Engine OFF!");
+
+    } else if (alcoholLevel > 60) {
+      // Reduce speed
+      int motorSpeed = map(alcoholLevel, 60, 75, 128, 0);  // Adjusted mapping range
+
+      digitalWrite(motorIn1, HIGH);
+      digitalWrite(motorIn2, LOW);
+      analogWrite(motorEnable, motorSpeed);
+
+      digitalWrite(buzzerPin, LOW);  // Turn off buzzer
+
+      Serial.print("Motor Speed: ");
+      Serial.print(motorSpeed);
+      Serial.println(" (Reduced)");
+
+      lcd.setCursor(0, 1);
+      lcd.print("Speed: ");
+      lcd.print(motorSpeed);
+
+    } else {
+      // Full speed
+      digitalWrite(motorIn1, HIGH);
+      digitalWrite(motorIn2, LOW);
+      analogWrite(motorEnable, 255);
+
+      digitalWrite(buzzerPin, LOW); // Turn off buzzer
+      Serial.println("Motor Speed: Full");
+
+      lcd.setCursor(0, 1);
+      lcd.print("Speed: 100%");
+    }
+  } else {
+    // System OFF
+    Serial.println("System OFF");
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("System OFF");
+    lcd.setCursor(0, 1);
+    lcd.print("Press to Start");
+
+    digitalWrite(motorIn1, LOW);
+    digitalWrite(motorIn2, LOW);
+    analogWrite(motorEnable, 0);
+
+    digitalWrite(buzzerPin, LOW);  // Turn off buzzer
+  }
+
+  delay(500); // Small delay to make the system more responsive
+}
